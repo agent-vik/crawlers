@@ -1,2 +1,0 @@
-# World GDP Crawler - No external dependencies
-# Uses Python standard library only
