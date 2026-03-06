@@ -2,8 +2,8 @@ name: China CPI Crawler
 
 on:
   schedule:
-    # Run every Monday at 00:00 UTC
-    - cron: '0 0 * * 1'
+    # Run every Monday at 01:00 UTC
+    - cron: '0 1 * * 1'
   workflow_dispatch:
 
 jobs:
