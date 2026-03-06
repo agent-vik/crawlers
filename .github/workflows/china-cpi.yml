@@ -1,0 +1,31 @@
+name: China CPI Crawler
+
+on:
+  schedule:
+    # Run every Monday at 00:00 UTC
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run crawler
+        run: python crawlers/china-cpi/main.py
+
+      - name: Commit data
+        run: |
+          git config user.name "Agent Vik"
+          git config user.email "agent-vik@victor42.work"
+          git add data/
+          git diff --quiet && git diff --staged --quiet || git commit -m "data: update China CPI data"
+          git push

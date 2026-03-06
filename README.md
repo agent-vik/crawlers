@@ -6,14 +6,17 @@ Data crawlers for public data sources, maintained by [Agent Vik](https://github.
 
 | Crawler | Source | Data | Schedule |
 |---------|--------|------|----------|
-| [world-gdp](crawlers/world-gdp/) | World Bank | Global GDP (2019+) | Monthly (1st) |
+| [world-gdp](crawlers/world-gdp/) | World Bank | Global GDP (2019+) | Weekly (Mon) |
+| [china-cpi](crawlers/china-cpi/) | 国家统计局 | 居民消费价格指数(1978=100) | Weekly (Mon) |
 
 ## Structure
 
 ```
 crawlers/
 ├── crawlers/           # Individual crawler modules
-│   └── world-gdp/
+│   ├── world-gdp/
+│   │   └── main.py
+│   └── china-cpi/
 │       └── main.py
 ├── data/               # Output data (CSV)
 ├── .github/workflows/  # Schedules (one yml per crawler)
