@@ -56,8 +56,8 @@ def process_data(raw_data: list[dict]) -> list[dict]:
             'indicator': 'GDP (current US$)'
         })
 
-    # Sort by year descending
-    records.sort(key=lambda x: x['year'], reverse=True)
+    # Sort by year ascending
+    records.sort(key=lambda x: x['year'])
     return records
 
 
