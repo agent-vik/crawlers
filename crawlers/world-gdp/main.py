@@ -7,6 +7,7 @@ Indicator: GDP (current US$) - NY.GDP.MKTP.CD
 
 import csv
 import json
+from datetime import datetime
 from pathlib import Path
 from urllib.request import urlopen
 from urllib.error import URLError, HTTPError
@@ -18,9 +19,23 @@ DATA_DIR = Path(__file__).parent.parent.parent / "data"
 OUTPUT_FILE = DATA_DIR / "world_gdp.csv"
 
 
+def get_existing_years() -> set[int]:
+    """Get years already in the CSV file"""
+    if not OUTPUT_FILE.exists():
+        return set()
+
+    years = set()
+    with open(OUTPUT_FILE, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            years.add(int(row['year']))
+    return years
+
+
 def fetch_gdp_data() -> list[dict]:
     """Fetch GDP data from World Bank API"""
-    url = f"{API_URL}?format=json&date={START_YEAR}:2025&per_page=50"
+    current_year = datetime.now().year
+    url = f"{API_URL}?format=json&date={START_YEAR}:{current_year}&per_page=50"
 
     try:
         with urlopen(url, timeout=30) as response:
@@ -76,7 +91,16 @@ def save_to_csv(records: list[dict]) -> None:
 
 
 def main():
-    print("Fetching World GDP data from World Bank API...")
+    current_year = datetime.now().year
+    print(f"Checking World GDP data for {current_year}...")
+
+    # Check if current year data already exists
+    existing_years = get_existing_years()
+    if current_year in existing_years:
+        print(f"Data for {current_year} already exists, skipping crawl")
+        return 0
+
+    print(f"Fetching World GDP data from World Bank API...")
 
     raw_data = fetch_gdp_data()
     if not raw_data:
