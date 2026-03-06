@@ -1,0 +1,2 @@
+# Shared dependencies for all crawlers
+# Individual crawlers may have their own requirements.txt
