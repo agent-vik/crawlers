@@ -104,13 +104,15 @@ def main():
 
     raw_data = fetch_gdp_data()
     if not raw_data:
-        print("No data fetched, exiting")
-        return 1
+        # Data source may not have published current year data yet
+        # This is expected for cron jobs early in the year — exit silently
+        print(f"No data fetched for {current_year}, may not be published yet")
+        return 0
 
     records = process_data(raw_data)
     if not records:
-        print("No valid records processed, exiting")
-        return 1
+        print(f"No valid records for {current_year}, may not be published yet")
+        return 0
 
     save_to_csv(records)
 
