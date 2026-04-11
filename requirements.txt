@@ -1,2 +1,3 @@
 # Shared dependencies for all crawlers
 # Individual crawlers may have their own requirements.txt
+cn-stats>=0.1.3

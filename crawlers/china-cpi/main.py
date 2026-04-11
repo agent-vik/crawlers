@@ -2,20 +2,21 @@
 """
 China CPI Crawler
 Fetches China Consumer Price Index data from National Bureau of Statistics
+via cn-stats (cnstats) PyPI package.
+
 Indicator: 居民消费价格指数(1978=100) - A090201
+Database: hgnd (宏观年度数据)
 """
 
 import csv
-import json
-import time
 from datetime import datetime
 from pathlib import Path
-from urllib.request import urlopen, Request
-from urllib.error import URLError, HTTPError
+
+from cnstats.stats import stats
 
 # Constants
-API_URL = "https://data.stats.gov.cn/easyquery.htm"
 INDICATOR_CODE = "A090201"  # 居民消费价格指数(1978=100)
+DBCODE = "hgnd"  # 宏观年度
 START_YEAR = 2019
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 OUTPUT_FILE = DATA_DIR / "china_cpi.csv"
@@ -27,70 +28,64 @@ def get_existing_years() -> set[int]:
         return set()
 
     years = set()
-    with open(OUTPUT_FILE, 'r', encoding='utf-8') as f:
+    with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            years.add(int(row['year']))
+            years.add(int(row["year"]))
     return years
 
 
-def fetch_cpi_data() -> list[dict]:
-    """Fetch CPI data from National Bureau of Statistics API"""
-    params = (
-        f"m=QueryData"
-        f"&dbcode=hgnd"
-        f"&rowcode=sj"
-        f"&colcode=zb"
-        f"&wds=[]"
-        f'&dfwds=[{{"wdcode":"zb","valuecode":"{INDICATOR_CODE}"}}]'
-        f"&k1={int(time.time() * 1000)}"
-    )
+def fetch_cpi_data(current_year: int) -> list[dict]:
+    """Fetch CPI data from National Bureau of Statistics via cn-stats"""
+    # Build date range string: "2019,2020,...,current_year"
+    years = list(range(START_YEAR, current_year + 1))
+    datestr = ",".join(str(y) for y in years)
 
-    url = f"{API_URL}?{params}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json",
-        "Referer": "https://data.stats.gov.cn/",
-    }
+    print(f"Querying cn-stats: zbcode={INDICATOR_CODE}, dbcode={DBCODE}, dates={datestr}")
 
-    try:
-        request = Request(url, headers=headers)
-        with urlopen(request, timeout=30) as response:
-            data = json.loads(response.read().decode('utf-8'))
-    except (URLError, HTTPError) as e:
-        print(f"Error fetching data: {e}")
+    raw = stats(zbcode=INDICATOR_CODE, datestr=datestr, dbcode=DBCODE, as_df=False)
+
+    if not raw:
+        print("cn-stats returned empty result")
         return []
 
-    if data.get('returncode') != 200:
-        print(f"API error: {data.get('returndata')}")
-        return []
-
-    return data.get('returndata', {}).get('datanodes', [])
-
-
-def process_data(raw_data: list[dict]) -> list[dict]:
-    """Process raw API data into clean records"""
+    # raw format: [[指标名称, 指标代码, 查询日期, 数值], ...]
     records = []
-
-    for item in raw_data:
-        if not item.get('data', {}).get('hasdata', False):
+    for item in raw:
+        if len(item) < 4:
             continue
 
-        year = int(item['wds'][1]['valuecode'])
+        indicator_name = item[0]
+        indicator_code = item[1]
+        date_val = item[2]
+        data_val = item[3]
+
+        # Skip if data value is empty or not a valid number
+        try:
+            value = float(data_val)
+        except (ValueError, TypeError):
+            continue
+
+        # date_val should be a year string for annual data
+        try:
+            year = int(date_val)
+        except (ValueError, TypeError):
+            continue
+
         if year < START_YEAR:
             continue
 
-        value = item['data']['data']
-
-        records.append({
-            'year': year,
-            'cpi_1978_base': value,
-            'source': '国家统计局',
-            'indicator': '居民消费价格指数(1978=100)'
-        })
+        records.append(
+            {
+                "year": year,
+                "cpi_1978_base": value,
+                "source": "国家统计局",
+                "indicator": indicator_name,
+            }
+        )
 
     # Sort by year ascending
-    records.sort(key=lambda x: x['year'])
+    records.sort(key=lambda x: x["year"])
     return records
 
 
@@ -98,9 +93,9 @@ def save_to_csv(records: list[dict]) -> None:
     """Save records to CSV file"""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    fieldnames = ['year', 'cpi_1978_base', 'source', 'indicator']
+    fieldnames = ["year", "cpi_1978_base", "source", "indicator"]
 
-    with open(OUTPUT_FILE, 'w', newline='', encoding='utf-8') as f:
+    with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(records)
@@ -118,18 +113,11 @@ def main():
         print(f"Data for {current_year} already exists, skipping crawl")
         return 0
 
-    print(f"Fetching China CPI data from National Bureau of Statistics...")
+    print(f"Fetching China CPI data from National Bureau of Statistics (via cn-stats)...")
 
-    raw_data = fetch_cpi_data()
-    if not raw_data:
-        # Data source may not have published current year data yet
-        # This is expected for cron jobs early in the year — exit silently
-        print(f"No data fetched for {current_year}, may not be published yet")
-        return 0
-
-    records = process_data(raw_data)
+    records = fetch_cpi_data(current_year)
     if not records:
-        print(f"No valid records for {current_year}, may not be published yet")
+        print(f"No data fetched for {current_year}, may not be published yet")
         return 0
 
     save_to_csv(records)
