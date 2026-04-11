@@ -12,6 +12,7 @@ import csv
 from datetime import datetime
 from pathlib import Path
 
+import requests
 from cnstats.stats import stats
 
 # Constants
@@ -43,7 +44,14 @@ def fetch_cpi_data(current_year: int) -> list[dict]:
 
     print(f"Querying cn-stats: zbcode={INDICATOR_CODE}, dbcode={DBCODE}, dates={datestr}")
 
-    raw = stats(zbcode=INDICATOR_CODE, datestr=datestr, dbcode=DBCODE, as_df=False)
+    try:
+        raw = stats(zbcode=INDICATOR_CODE, datestr=datestr, dbcode=DBCODE, as_df=False)
+    except (requests.exceptions.JSONDecodeError, requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout, requests.exceptions.RequestException,
+            KeyError, TypeError) as e:
+        print(f"API request failed: {type(e).__name__}: {e}")
+        print("This is likely due to NBS WAF blocking (403 UrlACL). Retry later.")
+        return []
 
     if not raw:
         print("cn-stats returned empty result")
