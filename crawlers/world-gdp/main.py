@@ -40,7 +40,7 @@ def fetch_gdp_data() -> list[dict]:
     try:
         with urlopen(url, timeout=30) as response:
             data = json.loads(response.read().decode('utf-8'))
-    except (URLError, HTTPError) as e:
+    except (URLError, HTTPError, TimeoutError, OSError) as e:
         print(f"Error fetching data: {e}")
         return []
 
