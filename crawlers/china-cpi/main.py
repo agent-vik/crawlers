@@ -45,7 +45,7 @@ def fetch_cpi_data(current_year: int) -> list[dict]:
     print(f"Querying cn-stats: zbcode={INDICATOR_CODE}, dbcode={DBCODE}, dates={datestr}")
 
     try:
-        raw = stats(zbcode=INDICATOR_CODE, datestr=datestr, dbcode=DBCODE, as_df=False)
+        raw = stats(zbcode=INDICATOR_CODE, datestr=datestr, dbcode=DBCODE)
     except (requests.exceptions.JSONDecodeError, requests.exceptions.ConnectionError,
             requests.exceptions.Timeout, requests.exceptions.RequestException,
             KeyError, TypeError) as e:
