@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
 China CPI Crawler
-Fetches China Consumer Price Index data from National Bureau of Statistics
-via cn-stats (cnstats) PyPI package.
+Fetches China Consumer Price Index data from Eastmoney datacenter API.
 
-Indicator: 居民消费价格指数(1978=100) - A090201
-Database: hgnd (宏观年度数据)
+Indicator: 居民消费价格指数(1978=100)
+Data: Eastmoney returns monthly cumulative YoY index (NATIONAL_ACCUMULATE).
+The 1978=100 base index is derived by chaining:
+    base[y] = base[y-1] * (accumulate[y] / 100)
+where accumulate[y] is the December cumulative index for year y
+(equivalent to the full-year YoY change).
 """
 
 import csv
@@ -13,124 +16,131 @@ from datetime import datetime
 from pathlib import Path
 
 import requests
-from cnstats.stats import stats
 
-# Constants
-INDICATOR_CODE = "A090201"  # 居民消费价格指数(1978=100)
-DBCODE = "hgnd"  # 宏观年度
+# Eastmoney datacenter API
+API_URL = (
+    "https://datacenter-web.eastmoney.com/api/data/v1/get"
+    "?reportName=RPT_ECONOMY_CPI"
+    "&columns=ALL"
+    "&pageNumber=1&pageSize=500"
+    "&sortColumns=REPORT_DATE&sortTypes=1"
+)
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "zh-CN,zh;q=0.9",
+}
+
 START_YEAR = 2019
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 OUTPUT_FILE = DATA_DIR / "china_cpi.csv"
 
 
-def get_existing_years() -> set[int]:
-    """Get years already in the CSV file"""
-    if not OUTPUT_FILE.exists():
-        return set()
+def fetch_cpi_accumulate() -> dict[int, float]:
+    """Fetch monthly CPI data from Eastmoney, return {year: full-year YoY index}."""
+    resp = requests.get(API_URL, headers=HEADERS, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
 
-    years = set()
+    if not data.get("result") or not data["result"].get("data"):
+        raise RuntimeError("Eastmoney returned no CPI data")
+
+    # Accumulate per-year December cumulative index (full-year YoY, prev-year=100)
+    by_year: dict[int, float] = {}
+    for row in data["result"]["data"]:
+        time_label = row.get("TIME", "")
+        acc = row.get("NATIONAL_ACCUMULATE")
+        if acc is None or "12月份" not in time_label:
+            continue
+        try:
+            year = int(time_label[:4])
+            by_year[year] = float(acc)
+        except (ValueError, TypeError):
+            continue
+
+    return by_year
+
+
+def read_existing() -> dict[int, float]:
+    """Read existing base-index rows from CSV."""
+    if not OUTPUT_FILE.exists():
+        return {}
+    existing: dict[int, float] = {}
     with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            years.add(int(row["year"]))
-    return years
+            try:
+                existing[int(row["year"])] = float(row["cpi_1978_base"])
+            except (ValueError, TypeError):
+                continue
+    return existing
 
 
-def fetch_cpi_data(current_year: int) -> list[dict]:
-    """Fetch CPI data from National Bureau of Statistics via cn-stats"""
-    # Build date range string: "2019,2020,...,current_year"
-    years = list(range(START_YEAR, current_year + 1))
-    datestr = ",".join(str(y) for y in years)
+def main() -> int:
+    current_year = datetime.now().year
+    print(f"Checking China CPI data (Eastmoney) up to {current_year}...")
 
-    print(f"Querying cn-stats: zbcode={INDICATOR_CODE}, dbcode={DBCODE}, dates={datestr}")
+    existing = read_existing()
+    if current_year in existing:
+        print(f"Data for {current_year} already exists, skipping crawl")
+        return 0
 
+    print("Fetching China CPI data from Eastmoney datacenter API...")
     try:
-        raw = stats(zbcode=INDICATOR_CODE, datestr=datestr, dbcode=DBCODE)
-    except (requests.exceptions.JSONDecodeError, requests.exceptions.ConnectionError,
-            requests.exceptions.Timeout, requests.exceptions.RequestException,
-            KeyError, TypeError) as e:
+        accumulate = fetch_cpi_accumulate()
+    except (requests.exceptions.RequestException, RuntimeError) as e:
         print(f"API request failed: {type(e).__name__}: {e}")
-        print("This is likely due to NBS WAF blocking (403 UrlACL). Retry later.")
-        return []
+        return 0
 
-    if not raw:
-        print("cn-stats returned empty result")
-        return []
+    if not accumulate:
+        print("No CPI data fetched")
+        return 0
 
-    # raw format: [[指标名称, 指标代码, 查询日期, 数值], ...]
-    records = []
-    for item in raw:
-        if len(item) < 4:
+    # Build the base-index chain
+    # Start point: use existing CSV values where available, else seed from 2019
+    base = dict(existing)
+    if not base:
+        # Seed from the first available year using the provided reference
+        # (2019 value is a known public constant; fall back to 2019=669.8)
+        if 2019 in accumulate:
+            base[2019] = 669.8
+        else:
+            print("No baseline year available to seed the chain")
+            return 0
+
+    # Chain forward using cumulative YoY
+    for year in sorted(accumulate):
+        if year in base:
             continue
+        prev = year - 1
+        if prev in base:
+            base[year] = base[prev] * accumulate[year] / 100.0
 
-        indicator_name = item[0]
-        indicator_code = item[1]
-        date_val = item[2]
-        data_val = item[3]
+    # Keep only years >= START_YEAR
+    records = [
+        {
+            "year": y,
+            "cpi_1978_base": round(v, 1),
+            "source": "东方财富",
+            "indicator": "居民消费价格指数(1978=100)",
+        }
+        for y, v in sorted(base.items())
+        if y >= START_YEAR
+    ]
 
-        # Skip if data value is empty or not a valid number
-        try:
-            value = float(data_val)
-        except (ValueError, TypeError):
-            continue
+    if not records:
+        print("No complete records to save")
+        return 0
 
-        # date_val should be a year string for annual data
-        try:
-            year = int(date_val)
-        except (ValueError, TypeError):
-            continue
-
-        if year < START_YEAR:
-            continue
-
-        records.append(
-            {
-                "year": year,
-                "cpi_1978_base": value,
-                "source": "国家统计局",
-                "indicator": indicator_name,
-            }
-        )
-
-    # Sort by year ascending
-    records.sort(key=lambda x: x["year"])
-    return records
-
-
-def save_to_csv(records: list[dict]) -> None:
-    """Save records to CSV file"""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-
     fieldnames = ["year", "cpi_1978_base", "source", "indicator"]
-
     with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(records)
 
-    print(f"Saved {len(records)} records to {OUTPUT_FILE}")
-
-
-def main():
-    current_year = datetime.now().year
-    print(f"Checking China CPI data for {current_year}...")
-
-    # Check if current year data already exists
-    existing_years = get_existing_years()
-    if current_year in existing_years:
-        print(f"Data for {current_year} already exists, skipping crawl")
-        return 0
-
-    print(f"Fetching China CPI data from National Bureau of Statistics (via cn-stats)...")
-
-    records = fetch_cpi_data(current_year)
-    if not records:
-        print(f"No data fetched for {current_year}, may not be published yet")
-        return 0
-
-    save_to_csv(records)
-
-    # Print summary
     print("\nSummary:")
     for r in records:
         print(f"  {r['year']}: {r['cpi_1978_base']}")

@@ -7,7 +7,7 @@ Data crawlers for public data sources, maintained by [Agent Vik](https://github.
 | Crawler | Source | Data | Schedule |
 |---------|--------|------|----------|
 | [world-gdp](crawlers/world-gdp/) | World Bank | Global GDP (2019+) | Weekly (Mon) |
-| [china-cpi](crawlers/china-cpi/) | 国家统计局 | 居民消费价格指数(1978=100) | Weekly (Mon) |
+| [china-cpi](crawlers/china-cpi/) | 东方财富 | 居民消费价格指数(1978=100) | Weekly (Mon) |
 
 ## Structure
 
