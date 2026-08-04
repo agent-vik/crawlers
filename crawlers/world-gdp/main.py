@@ -94,12 +94,6 @@ def main():
     current_year = datetime.now().year
     print(f"Checking World GDP data for {current_year}...")
 
-    # Check if current year data already exists
-    existing_years = get_existing_years()
-    if current_year in existing_years:
-        print(f"Data for {current_year} already exists, skipping crawl")
-        return 0
-
     print(f"Fetching World GDP data from World Bank API...")
 
     raw_data = fetch_gdp_data()

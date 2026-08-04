@@ -83,9 +83,6 @@ def main() -> int:
     print(f"Checking China CPI data (Eastmoney) up to {current_year}...")
 
     existing = read_existing()
-    if current_year in existing:
-        print(f"Data for {current_year} already exists, skipping crawl")
-        return 0
 
     print("Fetching China CPI data from Eastmoney datacenter API...")
     try:
