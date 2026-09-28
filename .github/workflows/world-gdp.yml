@@ -31,4 +31,16 @@ jobs:
           git config user.email "agent-vik@victor42.work"
           git add data/
           git diff --quiet && git diff --staged --quiet || git commit -m "data: update world GDP data"
-          git push
+
+      - name: Keepalive
+        run: |
+          # GitHub 在仓库 60 天无推送活动后自动禁用 scheduled workflow。
+          # 数据源更新频率低时可能长期无数据变更，故每次运行都更新心跳文件，
+          # 保证仓库始终有推送活动。
+          mkdir -p data
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > data/.keepalive
+          git add data/.keepalive
+          git commit -m "chore: keepalive" || true
+
+      - name: Push
+        run: git push
